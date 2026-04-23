@@ -657,20 +657,16 @@ def cmd_install() -> None:
     skills_dst = home / ".claude" / "skills"
     skills_dst.mkdir(parents=True, exist_ok=True)
 
-    # Install skills as subdirectories with SKILL.md (Claude Code convention)
-    skill_map = {
-        "ewankb": "ewankb.md",
-        "ewankb-query": "ewankb-query.md",
-        "ewankb-git": "Ewan-kb-git.md",
-    }
+    # Copy each skill subdirectory (with SKILL.md + references/ etc.)
     copied = []
-    for dir_name, src_name in skill_map.items():
-        src = skills_src / src_name
-        if src.exists():
-            dst_dir = skills_dst / dir_name
-            dst_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst_dir / "SKILL.md")
-            copied.append(dir_name)
+    for skill_dir in sorted(skills_src.iterdir()):
+        if not skill_dir.is_dir() or not (skill_dir / "SKILL.md").exists():
+            continue
+        dst_dir = skills_dst / skill_dir.name
+        if dst_dir.exists():
+            shutil.rmtree(dst_dir)
+        shutil.copytree(skill_dir, dst_dir)
+        copied.append(skill_dir.name)
 
     print(f"Installed {len(copied)} skill(s) to {skills_dst}/")
     for d in copied:
@@ -680,7 +676,7 @@ def cmd_install() -> None:
     claude_md = home / ".claude" / "CLAUDE.md"
     ewankb_section = (
         "# ewankb\n"
-        f"- **ewankb** (`~/.claude/skills/ewankb.md`) — build knowledge base from Java code + docs. Trigger: `/ewankb`\n"
+        "- **ewankb** (`~/.claude/skills/ewankb/`) — build knowledge base from Java code + docs. Trigger: `/ewankb`\n"
         "When the user types `/ewankb`, invoke the Skill tool with `skill: \"ewankb\"` before doing anything else.\n"
     )
 

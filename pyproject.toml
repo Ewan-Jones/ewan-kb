@@ -21,8 +21,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
+    "graphifyy>=0.4.0",
     "anthropic>=0.40.0",
-    # graphify — installed separately, not on PyPI
     "networkx>=3.0",
     "rank-bm25>=0.2.2",
     "jieba>=0.42",
