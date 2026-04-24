@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ewankb"
-version = "0.1.1"
+version = "0.1.2"
 description = "Build structured knowledge bases from documents and code, with graph-based querying."
 readme = "README.md"
 license = "MIT"
@@ -50,6 +50,10 @@ Documentation = "https://github.com/Ewan-Jone/ewan-kb#readme"
 where = ["."]
 include = ["ewankb*", "tools*"]
 exclude = ["tests*", "examples*"]
+
+[tool.setuptools.package-data]
+tools = ["*.json"]
+ewankb = ["skills/**/*.md"]
 
 [tool.ruff]
 line-length = 100

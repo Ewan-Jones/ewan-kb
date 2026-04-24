@@ -498,7 +498,8 @@ def cmd_preflight(args: argparse.Namespace) -> None:
         llm_path = target / "llm_config.json"
         if not cfg_path.exists() or not llm_path.exists():
             sys.path.insert(0, str(EWANKB_ROOT))
-            from tools.config_loader import create_project_config
+            from tools.config_loader import create_project_config, get_global_config
+            gcfg = get_global_config()
             create_project_config(target, f"{target.name}业务知识库")
             result["dirs"]["project_config"] = True
             result["dirs"]["llm_config"] = True
@@ -653,9 +654,13 @@ def cmd_surprising() -> None:
 
 def cmd_install() -> None:
     """Install ewankb skills to Claude Code (~/.claude/skills/)."""
-    skills_src = EWANKB_ROOT / ".claude" / "skills"
+    # Try pip-installed package location first, then source repo location
+    skills_src = EWANKB_ROOT / "ewankb" / "skills"
     if not skills_src.exists():
-        print("Error: skill files not found at", skills_src, file=sys.stderr)
+        skills_src = EWANKB_ROOT / ".claude" / "skills"
+    if not skills_src.exists():
+        print("Error: skill files not found.", file=sys.stderr)
+        print("Please reinstall ewankb or copy skill files manually.", file=sys.stderr)
         sys.exit(1)
 
     # Determine target directory
