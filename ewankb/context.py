@@ -146,29 +146,103 @@ class KBContext:
         )
 
     def preflight(self) -> dict[str, Any]:
-        """Run preflight check for this KB, returning structured result."""
-        from ewankb.__main__ import cmd_preflight
+        """Run preflight check for this KB, returning structured result.
 
-        # Build a fake args namespace
-        import argparse
-        args = argparse.Namespace(dir=str(self.kb_dir), fix=False)
-        # Capture output by redirecting stdout
-        import io
-        old_stdout = io.StringIO()
-        import sys
-        real_stdout = sys.stdout
-        sys.stdout = old_stdout
-        try:
-            cmd_preflight(args)
-        except SystemExit:
-            pass
-        finally:
-            sys.stdout = real_stdout
-        output = old_stdout.getvalue()
-        try:
-            return json.loads(output)
-        except json.JSONDecodeError:
-            return {"raw_output": output}
+        Reimplements the check logic directly (instead of calling cmd_preflight)
+        to avoid sys.stdout hijacking and SystemExit issues.
+        """
+        import json as _json
+
+        target = self.kb_dir
+        result: dict[str, Any] = {
+            "kb_dir": str(target),
+            "dirs": {},
+            "counts": {},
+            "api": {},
+            "graph": {},
+            "ready": True,
+            "blockers": [],
+        }
+
+        # Directory checks
+        dir_checks = {
+            "project_config": target / "project_config.json",
+            "llm_config": target / "llm_config.json",
+            "source": target / "source",
+            "source_repos": target / "source" / "repos",
+            "source_docs": target / "source" / "docs",
+            "domains": target / "domains",
+            "knowledgeBase": target / "knowledgeBase",
+            "graph": target / "graph",
+        }
+        for key, path in dir_checks.items():
+            result["dirs"][key] = path.exists()
+
+        # File counts
+        repos_dir = target / "source" / "repos"
+        docs_dir = target / "source" / "docs"
+        java_files = list(repos_dir.rglob("*.java")) if repos_dir.exists() else []
+        doc_files = list(docs_dir.rglob("*.md")) if docs_dir.exists() else []
+        result["counts"]["java_files"] = len(java_files)
+        result["counts"]["doc_files"] = len(doc_files)
+
+        # API config
+        llm = self.gcfg  # already loaded
+        api_key = ""
+        base_url = ""
+        model = ""
+        if self.pcfg:
+            llm_data = {}
+            llm_path = target / "llm_config.json"
+            if llm_path.exists():
+                with open(llm_path, encoding="utf-8") as f:
+                    llm_data = _json.load(f)
+            api_key = llm_data.get("api_key") or self.pcfg.get("api_key", "")
+            base_url = llm_data.get("base_url") or self.pcfg.get("base_url", "")
+            model = llm_data.get("model") or self.pcfg.get("model", "")
+        result["api"] = {
+            "key_configured": bool(api_key),
+            "key_preview": (api_key[:8] + "...") if api_key else "",
+            "base_url": base_url,
+            "model": model,
+        }
+
+        # Graph status
+        graph_file = target / "graph" / "graph.json"
+        if graph_file.exists():
+            try:
+                with open(graph_file, encoding="utf-8") as f:
+                    gdata = _json.load(f)
+                meta = gdata.get("metadata", {})
+                result["graph"] = {
+                    "exists": True,
+                    "nodes": meta.get("num_nodes", len(gdata.get("nodes", []))),
+                    "links": meta.get("num_links", len(gdata.get("links", []))),
+                    "engine": meta.get("engine", "?"),
+                    "created_at": meta.get("created_at", "?"),
+                }
+            except Exception:
+                result["graph"] = {"exists": True, "error": "parse_failed"}
+        else:
+            result["graph"] = {"exists": False}
+
+        # Blockers
+        blockers = []
+        for required_dir in ("source", "domains", "knowledgeBase", "graph"):
+            if not result["dirs"].get(required_dir):
+                blockers.append(f"no_{required_dir}")
+        if not result["dirs"]["project_config"]:
+            blockers.append("no_project_config")
+        if not result["dirs"]["llm_config"]:
+            blockers.append("no_llm_config")
+        if result["counts"]["java_files"] == 0:
+            blockers.append("no_java_files")
+        if not result["api"].get("key_configured"):
+            blockers.append("no_api_key")
+        result["blockers"] = blockers
+        result["ready"] = len(blockers) == 0
+
+        return result
 
     def info(self) -> dict[str, Any]:
         """Return summary info about this KB context."""
