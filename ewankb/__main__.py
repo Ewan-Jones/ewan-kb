@@ -165,8 +165,8 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     print(f"Initializing knowledge base at {kb_dir}...")
 
-    # Copy knowledgeBase template (templates/knowledgeBase/knowledgeBase/ → <kb>/knowledgeBase/)
-    template_dir = EWANKB_ROOT / "templates" / "knowledgeBase" / "knowledgeBase"
+    # Copy knowledgeBase template (ewankb/templates/knowledgeBase/ → <kb>/knowledgeBase/)
+    template_dir = EWANKB_ROOT / "ewankb" / "templates" / "knowledgeBase"
     shutil.copytree(template_dir, kb_dir / "knowledgeBase")
 
     # Create source/, domains/, and graph/ directories

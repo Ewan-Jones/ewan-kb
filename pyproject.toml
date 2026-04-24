@@ -52,8 +52,8 @@ include = ["ewankb*", "tools*"]
 exclude = ["tests*", "examples*"]
 
 [tool.setuptools.package-data]
-tools = ["*.json"]
-ewankb = ["skills/**/*.md"]
+tools = ["*.json", "discover/*.json"]
+ewankb = ["skills/**/*.md", "templates/**/*.md", "templates/**/*.json"]
 
 [tool.ruff]
 line-length = 100
