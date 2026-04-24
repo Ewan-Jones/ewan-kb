@@ -292,14 +292,28 @@ def get_system_fields() -> set:
 
 
 def get_segment_stopwords() -> tuple[frozenset, frozenset, frozenset]:
-    """Read segment stopwords from project_config.json. Returns (stopwords, wrappers, noise) frozensets."""
+    """Read segment stopwords from project_config.json. Auto-fills empty word lists from built-in defaults."""
     pcfg = get_project_config()
     data = pcfg.get("segment_stopwords", {})
+
+    # Check if any word list is empty (missing key or empty array)
+    needs_fill = False
     if not data:
-        # Old project_config.json without segment_stopwords — migrate by writing built-in defaults
+        needs_fill = True
+    else:
+        for key in ("segment_stopwords", "package_wrappers", "generic_noise"):
+            if not data.get(key, {}).get("words"):
+                needs_fill = True
+                break
+
+    if needs_fill:
         builtin = _load_builtin_stopwords()
-        _migrate_stopwords_to_config(builtin)
-        data = builtin
+        _fill_empty_stopwords_to_config(builtin)
+        # Re-read merged config (existing words preserved, empty ones filled)
+        import tools.config_loader as _mod
+        _mod._project_cfg = None
+        data = get_project_config().get("segment_stopwords", builtin)
+
     return (
         frozenset(data.get("segment_stopwords", {}).get("words", [])),
         frozenset(data.get("package_wrappers", {}).get("words", [])),
@@ -307,8 +321,11 @@ def get_segment_stopwords() -> tuple[frozenset, frozenset, frozenset]:
     )
 
 
-def _migrate_stopwords_to_config(builtin: dict) -> None:
-    """Write built-in segment_stopwords into an old project_config.json that lacks them."""
+def _fill_empty_stopwords_to_config(builtin: dict) -> None:
+    """Fill empty segment_stopwords word lists into project_config.json from built-in defaults.
+
+    Only fills empty lists; never overwrites existing words.
+    """
     global _project_cfg
     kb_dir = get_kb_dir()
     cfg_path = kb_dir / "project_config.json"
@@ -317,11 +334,18 @@ def _migrate_stopwords_to_config(builtin: dict) -> None:
     try:
         with open(cfg_path, encoding="utf-8") as f:
             raw = json.load(f)
-        raw["segment_stopwords"] = builtin
+        existing = raw.get("segment_stopwords", {})
+        if not existing:
+            raw["segment_stopwords"] = builtin
+        else:
+            for key in ("segment_stopwords", "package_wrappers", "generic_noise"):
+                if not existing.get(key, {}).get("words"):
+                    existing.setdefault(key, {})["words"] = builtin.get(key, {}).get("words", [])
+            raw["segment_stopwords"] = existing
         with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump(raw, f, indent=2, ensure_ascii=False)
-        _project_cfg = raw  # update cache
-        print(f"  Migrated built-in segment_stopwords into {cfg_path}", file=sys.stderr)
+        _project_cfg = raw
+        print(f"  Filled empty segment_stopwords into {cfg_path}", file=sys.stderr)
     except Exception:
         pass
 
@@ -390,14 +414,13 @@ def _load_builtin_stopwords() -> dict:
 # ── LLM 统一调用层 ──────────────────────────────────────────────────────────
 
 def _resolve_llm_config() -> dict:
-    """从 llm_config.json + project_config.json(兼容旧版) + global_config 解析 LLM 配置。"""
+    """从 llm_config.json 读取 LLM 配置（兼容旧版 project_config.json）。"""
     llm = get_llm_config()
     pcfg = get_project_config()
-    gcfg = get_global_config()
     return {
-        "api_key": llm.get("api_key") or pcfg.get("api_key") or gcfg.api_key,
-        "base_url": llm.get("base_url") or pcfg.get("base_url") or gcfg.base_url,
-        "model": llm.get("model") or pcfg.get("model") or gcfg.default_model,
+        "api_key": llm.get("api_key") or pcfg.get("api_key", ""),
+        "base_url": llm.get("base_url") or pcfg.get("base_url", ""),
+        "model": llm.get("model") or pcfg.get("model", "claude-haiku-4-5-20251001"),
         "protocol": llm.get("api_protocol") or pcfg.get("api_protocol", "anthropic"),
     }
 

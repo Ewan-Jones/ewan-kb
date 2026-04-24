@@ -521,23 +521,22 @@ def cmd_preflight(args: argparse.Namespace) -> None:
     sys.path.insert(0, str(EWANKB_ROOT))
     try:
         os.environ["EWANKB_DIR"] = str(target)
-        from tools.config_loader import get_global_config, get_project_config, get_llm_config
+        from tools.config_loader import get_project_config, get_llm_config
         # Reset cached config so it reads from target dir
         import tools.config_loader as _cfg_mod
         _cfg_mod._global_cfg = None
         _cfg_mod._project_cfg = None
         _cfg_mod._llm_cfg = None
 
-        gcfg = get_global_config()
         llm = get_llm_config()
         pcfg = get_project_config()
-        api_key = llm.get("api_key") or pcfg.get("api_key") or gcfg.api_key
-        base_url = llm.get("base_url") or pcfg.get("base_url") or gcfg.base_url
-        model = llm.get("model") or pcfg.get("model") or gcfg.default_model
+        api_key = llm.get("api_key") or pcfg.get("api_key", "")
+        base_url = llm.get("base_url") or pcfg.get("base_url", "")
+        model = llm.get("model") or pcfg.get("model", "")
         result["api"] = {
             "key_configured": bool(api_key),
             "key_preview": (api_key[:8] + "...") if api_key else "",
-            "base_url": base_url or "",
+            "base_url": base_url,
             "model": model,
         }
     except Exception as e:
