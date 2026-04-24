@@ -25,6 +25,8 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.egg-info/
+build/
+dist/
 .venv/
 venv/
 .python-version
