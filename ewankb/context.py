@@ -106,27 +106,43 @@ class KBContext:
             query as _query,
             query_graph_json as _query_graph_json,
         )
+        import tools.config_loader as cfg
+
+        old_env = os.environ.get("EWANKB_DIR", "")
+        os.environ["EWANKB_DIR"] = str(self.kb_dir)
+        cfg._global_cfg = None
+        cfg._project_cfg = None
+        cfg._llm_cfg = None
 
         if traversal is None:
             traversal = self.gcfg.default_traversal
         if max_nodes is None:
             max_nodes = self.gcfg.max_nodes
 
-        if verbose:
-            return _query_graph_json(
+        try:
+            if verbose:
+                return _query_graph_json(
+                    query_text,
+                    traversal=traversal,
+                    max_nodes=max_nodes,
+                    verbose=True,
+                )
+            if max_tokens is None:
+                max_tokens = self.gcfg.default_max_tokens
+            return _query(
                 query_text,
                 traversal=traversal,
                 max_nodes=max_nodes,
-                verbose=True,
+                max_tokens=max_tokens,
             )
-        if max_tokens is None:
-            max_tokens = self.gcfg.default_max_tokens
-        return _query(
-            query_text,
-            traversal=traversal,
-            max_nodes=max_nodes,
-            max_tokens=max_tokens,
-        )
+        finally:
+            if old_env:
+                os.environ["EWANKB_DIR"] = old_env
+            else:
+                os.environ.pop("EWANKB_DIR", None)
+            cfg._global_cfg = None
+            cfg._project_cfg = None
+            cfg._llm_cfg = None
 
     def query_kb(
         self,
@@ -137,13 +153,29 @@ class KBContext:
     ) -> str:
         """Search knowledge base documents using BM25."""
         from tools.graph_runtime.kb_query import query_kb as _query_kb
+        import tools.config_loader as cfg
 
-        return _query_kb(
-            query_text,
-            max_results=max_results,
-            max_chars=max_chars,
-            domain_filter=domain_filter,
-        )
+        old_env = os.environ.get("EWANKB_DIR", "")
+        os.environ["EWANKB_DIR"] = str(self.kb_dir)
+        cfg._global_cfg = None
+        cfg._project_cfg = None
+        cfg._llm_cfg = None
+
+        try:
+            return _query_kb(
+                query_text,
+                max_results=max_results,
+                max_chars=max_chars,
+                domain_filter=domain_filter,
+            )
+        finally:
+            if old_env:
+                os.environ["EWANKB_DIR"] = old_env
+            else:
+                os.environ.pop("EWANKB_DIR", None)
+            cfg._global_cfg = None
+            cfg._project_cfg = None
+            cfg._llm_cfg = None
 
     def preflight(self) -> dict[str, Any]:
         """Run preflight check for this KB, returning structured result.
