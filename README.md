@@ -79,6 +79,39 @@ ewankb install
 
 运行环境：Python 3.10+。自动拉取 `graphifyy`、`anthropic`、`rank-bm25`、`jieba` 等依赖。
 
+### 自测验证
+
+仓库内置了商城项目 fixture（5 个业务域、24 个 Java 文件、8 个业务文档），用于跑通完整流程并验证功能效果：
+
+```bash
+# 运行 E2E 测试（需要 ANTHROPIC_API_KEY 环境变量）
+pytest tests/test_mall_e2e.py -v
+
+# 构建产物保留在 /tmp/ewankb_test_mall/ 方便手动查看
+KEEP_OUTPUT=1 pytest tests/test_mall_e2e.py -v
+```
+
+测试流程：域发现 → 知识库构建 → 图谱构建 → 图谱查询 → 文档检索，覆盖所有核心功能。
+
+fixture 结构：
+
+```text
+tests/fixtures/商城项目/
+├── source/repos/mall-backend/src/main/java/com/mall/application/apps/
+│   ├── order/      # 订单域（5 文件）
+│   ├── product/    # 商品域（5 文件）
+│   ├── payment/    # 支付域（5 文件）
+│   ├── inventory/  # 库存域（4 文件）
+│   └── member/     # 会员域（5 文件）
+└── source/docs/
+    ├── 101_订单需求文档.md
+    ├── 102_商品需求方案.md
+    ├── 103_支付接口API文档.md
+    ├── ...（共 8 个文档，覆盖 5 种类型）
+```
+
+Service 类之间的跨域 import（如 OrderService → ProductService, PaymentService）会在图谱中形成跨域关联边。
+
 ## 常用命令
 
 ### Claude Code 入口
