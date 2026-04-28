@@ -25,20 +25,11 @@ ewankb preflight --query --dir .
 
 解析 JSON：`kb_dir` 是知识库路径。
 
-**preflight 失败处理**（自动引导配置）：
-- `blockers` 仅含 `no_llm_config`（其他 blocker 都不存在）→ 直接用 Write 工具创建 `{kb_dir}/llm_config.json`，内容如下：
-  ```json
-  {
-    "api_key": "",
-    "base_url": "",
-    "model": "claude-haiku-4-5-20251001",
-    "api_protocol": "anthropic"
-  }
-  ```
-  然后提示用户编辑并填入 API Key，停止
-- `blockers` 含 `no_llm_config` 且同时有其他 blocker → 如实告知所有 blocker（包含 llm_config 缺失和其他），停止
-- `blockers` 含 `no_api_key` → `llm_config.json` 存在但 API Key 为空，提示用户填入，停止
-- 其他 blocker → 如实告知用户并停止
+**preflight 失败处理**（仅关注查询相关 blocker）：
+- 使用 `--query` 模式时，`no_llm_config` 和 `no_api_key` 不会出现在 blockers 中（查询不需要 LLM）
+- 如果 blockers 包含 `no_project_config` → 提示用户运行 `/ewankb init` 初始化知识库，停止
+- 如果 blockers 包含 `no_source` / `no_domains` / `no_knowledgeBase` / `no_graph` → 知识库不完整，提示用户运行 `/ewankb --build-graph`，停止
+- 如果 `graph.exists: false` 且需要 graph 查询 → 提示先运行 `/ewankb --build-graph`，停止
 
 **自动拉取**（消费者无需手动 pull）：
 - 如果 `kb_dir` 是 git 仓库，检查是否有 remote 配置：
