@@ -20,25 +20,16 @@ trigger: /ewankb-query
 ### 1. 定位知识库 + 自动拉取
 
 ```bash
-ewankb preflight --dir .
+ewankb preflight --query --dir .
 ```
 
 解析 JSON：`kb_dir` 是知识库路径。
 
-**preflight 失败处理**（自动引导配置）：
-- `blockers` 仅含 `no_llm_config`（其他 blocker 都不存在）→ 直接用 Write 工具创建 `{kb_dir}/llm_config.json`，内容如下：
-  ```json
-  {
-    "api_key": "",
-    "base_url": "",
-    "model": "claude-haiku-4-5-20251001",
-    "api_protocol": "anthropic"
-  }
-  ```
-  然后提示用户编辑并填入 API Key，停止
-- `blockers` 含 `no_llm_config` 且同时有其他 blocker → 如实告知所有 blocker（包含 llm_config 缺失和其他），停止
-- `blockers` 含 `no_api_key` → `llm_config.json` 存在但 API Key 为空，提示用户填入，停止
-- 其他 blocker → 如实告知用户并停止
+**preflight 失败处理**（仅关注查询相关 blocker）：
+- 使用 `--query` 模式时，`no_llm_config` 和 `no_api_key` 不会出现在 blockers 中（查询不需要 LLM）
+- 如果 blockers 包含 `no_project_config` → 提示用户运行 `/ewankb init` 初始化知识库，停止
+- 如果 blockers 包含 `no_source` / `no_domains` / `no_knowledgeBase` / `no_graph` → 知识库不完整，提示用户运行 `/ewankb --build-graph`，停止
+- 如果 `graph.exists: false` 且需要 graph 查询 → 提示先运行 `/ewankb --build-graph`，停止
 
 **自动拉取**（消费者无需手动 pull）：
 - 如果 `kb_dir` 是 git 仓库，检查是否有 remote 配置：
@@ -68,17 +59,45 @@ ewankb preflight --dir .
 ### 3A. Graph 模式（仅图谱）
 
 ```bash
-ewankb query "用户问题"
+ewankb query "用户问题" --json --dir "{kb_dir}"
 ```
 
 如果 `ewankb` 命令不可用，请先运行 `pip install ewankb`。
 
-解读结果并回答。回答末尾附建议："想看原文？试 `/ewankb-query kb \"同一问题\"`"
+**解析 JSON 结果并解读**：
+
+1. **matched_start_nodes 为空**：
+   → 告知用户图中未找到匹配节点，建议：
+   - 尝试更短的关键词（如"付款额度" → "付款"）
+   - 尝试用英文术语（如"overdraft"、"payment"）
+   - 检查 query_analysis.extracted_keywords 是否合理
+   - 建议用 `/ewankb-query kb "同一问题"` 切换到文档检索
+
+2. **matched_start_nodes 非空**：
+   → 基于 nodes 和 edges 用自然语言合成回答：
+   - 从 matched_start_nodes 出发，描述直接关联的概念
+   - 引用 source_file、source_location、relation 作为证据
+   - 如果图的深度不足以覆盖问题范围，如实说明
+   - 不要编造图中没有的关系
+   - 参考 graphify 的做法：基于图的边关系做有限推理
+
+**示例解读**：
+```
+根据图谱分析：
+- 找到 2 个与"预付款"相关的节点
+- 预付款执行付款 → calls → 付款计划
+  来源：domains/收付款管理/README.md
+
+这表明预付款流程和付款计划存在调用关系。但图中没有包含具体的额度计算逻辑，
+可能需要查看 `/ewankb-query kb` 文档检索来获取更详细的计算规则。
+```
+
+回答末尾附建议："想看原文？试 `/ewankb-query kb \"同一问题\"`"
 
 ### 3B. KB 模式（仅文档）
 
 ```bash
-ewankb query-kb "用户问题"
+ewankb query-kb "用户问题" --dir "{kb_dir}"
 ```
 
 如果高分文档内容被截断，用 Read 工具读取完整内容后再回答。
@@ -90,10 +109,10 @@ ewankb query-kb "用户问题"
 用 Agent 工具**并行**启动两个 subagent（同一条消息）：
 
 **Subagent A（graph）**：
-> 在 {kb_dir} 执行 `ewankb query "{问题}"`，分析结果（涉及哪些节点、边、域）。
+> 执行 `ewankb query "{问题}" --dir "{kb_dir}"`，分析结果（涉及哪些节点、边、域）。
 
 **Subagent B（kb）**：
-> 在 {kb_dir} 执行 `ewankb query-kb "{问题}"`，对高分文档用 Read 工具读取完整内容，分析结果。
+> 执行 `ewankb query-kb "{问题}" --dir "{kb_dir}"`，对高分文档用 Read 工具读取完整内容，分析结果。
 
 **对比 + 歧义处理**：
 - 两路结果一致 → 合并汇总回答
