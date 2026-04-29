@@ -422,13 +422,15 @@ def _resolve_llm_config() -> dict:
 
 def create_llm_client():
     """创建 LLM 客户端（根据 api_protocol 自动选择 Anthropic 或 OpenAI SDK）。"""
+    import os
     c = _resolve_llm_config()
+    timeout = float(os.environ.get("API_TIMEOUT_MS", 600000)) / 1000.0
     if c["protocol"] == "openai":
         from openai import OpenAI
-        return OpenAI(api_key=c["api_key"], base_url=c["base_url"] or None)
+        return OpenAI(api_key=c["api_key"], base_url=c["base_url"] or None, timeout=timeout)
     else:
         import anthropic
-        return anthropic.Anthropic(api_key=c["api_key"], base_url=c["base_url"] or None)
+        return anthropic.Anthropic(api_key=c["api_key"], base_url=c["base_url"] or None, timeout=timeout)
 
 
 def get_llm_model() -> str:

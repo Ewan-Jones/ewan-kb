@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 ewankb — Build and query structured knowledge bases.
 
@@ -22,22 +21,51 @@ Usage:
 """
 from __future__ import annotations
 
-import os
 import sys
-import json
-import shutil
 import argparse
-import subprocess
-from pathlib import Path
+from argparse import Namespace
 
-# Fix Windows Chinese output encoding
 if sys.platform == "win32":
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
 
+from .cli._helpers import resolve_kb_dir as _resolve_kb_dir
+from .cli._helpers import graph_file as _graph_file
+from .cli._helpers import EWANKB_ROOT
 
-EWANKB_ROOT = Path(__file__).resolve().parent.parent
+from .cli.init_cmd import run as _run_init
+from .cli.discover_cmd import run as _run_discover
+from .cli.knowledgebase_cmd import run as _run_knowledgebase
+from .cli.analyze_cmd import run as _run_analyze
+from .cli.build_graph_cmd import run as _run_build_graph
+from .cli.query_cmd import run as _run_query
+from .cli.query_cmd import run_kb as _run_query_kb
+from .cli.preflight_cmd import run as _run_preflight
+from .cli.diff_cmd import run as _run_diff
+from .cli.rebuild_cmd import run as _run_rebuild
+from .cli.install_cmd import run as _run_install
+from .cli.config_cmd import run as _run_config
+from .cli.stats_cmd import run_stats as _run_stats
+from .cli.stats_cmd import run_communities as _run_communities
+from .cli.stats_cmd import run_surprising as _run_surprising
+
+
+def cmd_init(args): return _run_init(args)
+def cmd_discover(): return _run_discover(Namespace())
+def cmd_knowledgebase(skip_discover=False): return _run_knowledgebase(Namespace(skip_discover=skip_discover))
+def cmd_analyze(args): return _run_analyze(args)
+def cmd_build_graph(): return _run_build_graph(Namespace())
+def cmd_query(args): return _run_query(args)
+def cmd_query_kb(args): return _run_query_kb(args)
+def cmd_preflight(args): return _run_preflight(args)
+def cmd_diff(): return _run_diff(Namespace())
+def cmd_rebuild(): return _run_rebuild(Namespace())
+def cmd_install(): return _run_install(Namespace())
+def cmd_config(args): return _run_config(args)
+def cmd_stats(): return _run_stats(Namespace())
+def cmd_communities(): return _run_communities(Namespace())
+def cmd_surprising(): return _run_surprising(Namespace())
 
 
 def main() -> None:
@@ -112,46 +140,7 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        if args.command == "init":
-            cmd_init(args)
-        elif args.command == "discover":
-            cmd_discover()
-        elif args.command == "knowledgebase":
-            cmd_knowledgebase(skip_discover=getattr(args, 'skip_discover', False))
-        elif args.command == "analyze-code":
-            cmd_analyze(args)
-        elif args.command == "build-graph":
-            cmd_build_graph()
-        elif args.command == "build":
-            if args.kb:
-                cmd_knowledgebase(skip_discover=getattr(args, 'skip_discover', False))
-            elif args.graph:
-                cmd_build_graph()
-            else:
-                cmd_knowledgebase(skip_discover=getattr(args, 'skip_discover', False))
-                cmd_build_graph()
-        elif args.command in ("query", "query-graph"):
-            cmd_query(args)
-        elif args.command == "query-kb":
-            cmd_query_kb(args)
-        elif args.command in ("stats", "graph-stats"):
-            cmd_stats()
-        elif args.command == "communities":
-            cmd_communities()
-        elif args.command == "surprising":
-            cmd_surprising()
-        elif args.command == "preflight":
-            cmd_preflight(args)
-        elif args.command == "diff":
-            cmd_diff()
-        elif args.command == "rebuild":
-            cmd_rebuild()
-        elif args.command == "install":
-            cmd_install()
-        elif args.command == "config":
-            cmd_config(args)
-        else:
-            parser.print_help()
+        _dispatch(args)
     except Exception as e:
         import traceback
         print(f"Error: {e}", file=sys.stderr)
@@ -159,634 +148,47 @@ def main() -> None:
         sys.exit(1)
 
 
-# ── Commands ────────────────────────────────────────────────────────────────
-
-def cmd_init(args: argparse.Namespace) -> None:
-    kb_dir = Path(args.name).resolve()
-    if kb_dir.exists():
-        print(f"Error: directory '{kb_dir}' already exists.", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"Initializing knowledge base at {kb_dir}...")
-
-    # Copy knowledgeBase template (ewankb/templates/knowledgeBase/ → <kb>/knowledgeBase/)
-    template_dir = EWANKB_ROOT / "ewankb" / "templates" / "knowledgeBase"
-    shutil.copytree(template_dir, kb_dir / "knowledgeBase")
-
-    # Create source/, domains/, and graph/ directories
-    (kb_dir / "source").mkdir()
-    (kb_dir / "source" / "docs").mkdir()
-    (kb_dir / "source" / "repos").mkdir()
-    (kb_dir / "domains").mkdir()
-    (kb_dir / "domains" / "_meta").mkdir()
-    (kb_dir / "graph").mkdir()
-    (kb_dir / "graph" / ".cache").mkdir()
-
-    # Create .gitignore for the knowledge base
-    gitignore = kb_dir / ".gitignore"
-    gitignore.write_text(
-        "# Build state (rebuilt automatically)\n"
-        "graph/.cache/\n"
-        "knowledgeBase/_state/\n\n"
-        "# Environment and config (contains API keys)\n"
-        ".env\n"
-        "llm_config.json\n",
-        encoding="utf-8",
-    )
-
-    # Build project config using shared helper
-    from ewankb.tools.config_loader import create_project_config
-    create_project_config(kb_dir, args.name)
-    print(f"  Created project_config.json + llm_config.json")
-
-    print(f"\nCreated {kb_dir}/")
-    print(f"Next steps:")
-    print(f"  1. cd {kb_dir}")
-    print(f"  2. Edit llm_config.json — fill in your API key (see examples/llm_config.example.json)")
-    print(f"  3. Place backend Java code in source/repos/")
-    print(f"  4. Place .md documents in source/docs/ (optional)")
-    print(f"  5. ewankb build")
-    print(f"  6. ewankb query 'your question'")
-    print(f"")
-    print(f"Directory structure:")
-    print(f"  source/         Raw materials (code + docs)")
-    print(f"  domains/        Auto-discovered business domains")
-    print(f"  knowledgeBase/  AI-refined documents by type")
-    print(f"  graph/          Knowledge graph")
-
-
-def cmd_diff() -> None:
-    """Detect source changes and show affected domains."""
-    kb_dir = _resolve_kb_dir()
-    os.chdir(kb_dir)
-
-    from ewankb.tools.incremental import diff
-    result = diff()
-
-    if not result["has_changes"]:
-        print("源数据无变化。")
-        return
-
-    changes = result["changes"]
-    for cat in ("repos", "docs"):
-        c = changes[cat]
-        if any(c.values()):
-            print(f"\n{cat}:")
-            if c["added"]:
-                print(f"  新增: {len(c['added'])} 个文件")
-                for f in c["added"][:5]:
-                    print(f"    + {f}")
-                if len(c["added"]) > 5:
-                    print(f"    ... 共 {len(c['added'])} 个")
-            if c["modified"]:
-                print(f"  修改: {len(c['modified'])} 个文件")
-                for f in c["modified"][:5]:
-                    print(f"    ~ {f}")
-                if len(c["modified"]) > 5:
-                    print(f"    ... 共 {len(c['modified'])} 个")
-            if c["deleted"]:
-                print(f"  删除: {len(c['deleted'])} 个文件")
-                for f in c["deleted"][:5]:
-                    print(f"    - {f}")
-                if len(c["deleted"]) > 5:
-                    print(f"    ... 共 {len(c['deleted'])} 个")
-
-    domains = result["affected_domains"]
-    if domains:
-        print(f"\n受影响的域 ({len(domains)}):")
-        for d in domains:
-            print(f"  - {d}")
-    else:
-        print("\n未能确定受影响的域（新增文档无映射记录），建议全量构建。")
-
-    # Output JSON for programmatic use
-    print(f"\n[JSON] {json.dumps(result, ensure_ascii=False)}")
-
-
-def cmd_rebuild() -> None:
-    """Delete all generated artifacts for a clean rebuild."""
-    import shutil
-    kb_dir = _resolve_kb_dir()
-
-    targets = [
-        kb_dir / "domains",
-        kb_dir / "knowledgeBase",
-        kb_dir / "graph",
-        kb_dir / "source" / ".cache",
-    ]
-
-    removed = []
-    for t in targets:
-        if t.exists():
-            shutil.rmtree(t)
-            removed.append(str(t.relative_to(kb_dir)))
-
-    if removed:
-        print(f"已清理: {', '.join(removed)}")
-    else:
-        print("无需清理（目录均不存在）。")
-    print("可以重新运行 ewankb build 进行全量构建。")
-
-
-def cmd_discover() -> None:
-    """Re-run domain discovery (AI translation)."""
-    kb_dir = _resolve_kb_dir()
-    os.chdir(kb_dir)
-
-    from ewankb.tools.discover.discover_domains import discover
-    discover(kb_dir, use_ai=True)
-
-    # Update source hash cache
-    from ewankb.tools.incremental import update_hash
-    result = update_hash()
-    print(f"Hash cache updated: {result['total_files']} files")
-
-
-def cmd_knowledgebase(skip_discover: bool = False) -> None:
-    """Build domains/ + knowledgeBase/: 7-step pipeline."""
-
-    kb_dir = _resolve_kb_dir()
-    os.chdir(kb_dir)
-
-    def _run_script(script_path: Path, extra_args: list[str] | None = None):
-        """Run a Python script in subprocess with EWANKB_DIR set."""
-        if not script_path.exists():
-            print(f"  ({script_path.name} not found — skipping)")
-            return
-        env = dict(os.environ)
-        env["EWANKB_DIR"] = str(kb_dir)
-        env["PYTHONPATH"] = str(EWANKB_ROOT)
-        env["PYTHONIOENCODING"] = "utf-8"
-        # Derive module path from file path for relative imports to work
-        # e.g. ewankb/tools/extract_kb/analyze_code.py → ewankb.tools.extract_kb.analyze_code
-        rel = script_path.relative_to(EWANKB_ROOT)
-        module = str(rel.with_suffix("")).replace("/", ".")
-        cmd = [sys.executable, "-m", module]
-        if extra_args:
-            cmd.extend(extra_args)
-        result = subprocess.run(cmd, env=env, capture_output=False)
-        if result.returncode != 0:
-            print(f"  WARNING: {script_path.name} exited with code {result.returncode}")
-
-    scripts = EWANKB_ROOT / "ewankb" / "tools" / "extract_kb"
-
-    # Step 1: Auto-discover domains from backend Java code
-    if skip_discover:
-        print("Step 1/7: Skipped (--skip-discover)")
-    else:
-        print("Step 1/7: Discovering domains from backend code...")
-        from ewankb.tools.discover.discover_domains import discover
-        discover(kb_dir, use_ai=True)
-
-    # Step 2: Analyze code → code_analysis.json
-    print("\nStep 2/7: Analyzing code modules...")
-    _run_script(scripts / "analyze_code.py")
-
-    # Step 3a: Extract + classify docs → domains/{域名}/{doc_type}/
-    print("\nStep 3/7: Extracting and classifying documents...")
-    _run_script(scripts / "extract_to_kb.py")
-
-    # Step 3b: Generate code module docs → domains/{域名}/代码模块说明/
-    print("\nStep 3b/7: Generating code module documentation...")
-    _run_script(scripts / "gen_code_module_docs.py")
-
-    # Step 4: Enrich docs (add code/doc associations to each file)
-    print("\nStep 4/7: Enriching documents with code associations...")
-    _run_script(scripts / "enrich_kb.py")
-
-    # Step 5: Generate domain overviews (README.md per domain)
-    print("\nStep 5/7: Generating domain overviews...")
-    _run_script(scripts / "gen_domain_overview.py")
-
-    # Step 6: Generate process documents (PROCESSES.md per domain)
-    print("\nStep 6/7: Generating process documents...")
-    _run_script(scripts / "gen_processes.py")
-
-    # Step 7: Migrate docs from domains/ to knowledgeBase/, update README paths
-    print("\nStep 7/7: Migrating documents to knowledgeBase/...")
-    _run_script(scripts / "migrate_to_kb.py")
-
-    # Cleanup empty directories
-    from ewankb.tools.extract_kb.extract_to_kb import cleanup_empty_dirs
-    cleanup_empty_dirs(kb_dir / "knowledgeBase")
-    cleanup_empty_dirs(kb_dir / "domains")
-
-    # Update source hash cache + doc→domain mapping
-    from ewankb.tools.incremental import update_hash
-    result = update_hash()
-    print(f"\nHash cache updated: {result['total_files']} files, {result['doc_mappings']} doc mappings")
-
-    # Build BM25 index for query-kb
-    from ewankb.tools.graph_runtime.bm25_index import load_or_build
-    bm25, docs = load_or_build()
-    print(f"BM25 index built: {len(docs)} documents")
-
-    print("\n=== Knowledge base build complete ===")
-
-
-def cmd_analyze(args: argparse.Namespace) -> None:
-    """Run AST-based code analysis on a directory using graphify."""
-    path = Path(args.path).resolve()
-    print(f"Analyzing code at {path}...")
-
-    from graphify import extract, collect_files
-
-    files = collect_files(path)
-    if not files:
-        print("No source files found.")
-        return
-
-    print(f"  Found {len(files)} files")
-    result = extract(files)
-
-    nodes = result.get("nodes", [])
-    edges = result.get("edges", [])
-
-    from collections import Counter
-    type_counts = Counter(n.get("type", "unknown") for n in nodes)
-    print(f"  Extracted {len(nodes)} nodes, {len(edges)} edges")
-    print(f"  Node types:")
-    for t, c in type_counts.most_common():
-        print(f"    {t}: {c}")
-
-
-def cmd_build_graph() -> None:
-    """Build graph.json using graphify."""
-    from ewankb.tools.build_graph.graph_builder import build_graph
-
-    kb_dir = _resolve_kb_dir()
-    os.chdir(kb_dir)
-
-    from ewankb.tools import config_loader as cfg
-    incremental = cfg.get_global_config().incremental
-
-    print(f"Building graph (incremental={incremental})...")
-    graph = build_graph(incremental=incremental)
-    meta = graph["metadata"]
-    print(f"Done. {meta['num_nodes']} nodes, {meta['num_links']} links")
-    print(f"  Code files: {meta.get('code_files', '?')}")
-    print(f"  Semantic nodes: {meta.get('semantic_nodes', 0)}")
-    print(f"  Semantic edges: {meta.get('semantic_edges', 0)}")
-    print(f"  Communities: {meta.get('communities', '?')}")
-    print(f"  Engine: {meta.get('engine', '?')}")
-    print(f"  Source hash: {meta['source_hash']}")
-    print(f"  KB hash:     {meta['kb_hash']}")
-
-
-def cmd_query(args: argparse.Namespace) -> None:
-    """Query the graph."""
-    from ewankb.query import query, query_graph_json
-
-    if getattr(args, 'dir', None):
-        kb_dir = Path(args.dir).resolve()
-        os.environ["EWANKB_DIR"] = str(kb_dir)
-        # Reset config caches so they pick up the new EWANKB_DIR
-        import ewankb.tools.config_loader as _cfg_mod
-        _cfg_mod._global_cfg = None
-        _cfg_mod._project_cfg = None
-        _cfg_mod._llm_cfg = None
-        graph_file = kb_dir / "graph" / "graph.json"
-    else:
-        graph_file = None
-
-    traversal = args.traversal
-    if args.depth and not traversal:
-        traversal = "bfs"
-
-    # max_nodes: None means use config default; explicit --limit or --depth overrides
-    max_nodes = None
-    if args.depth:
-        max_nodes = args.depth * 15
-        if args.limit and args.limit < max_nodes:
-            max_nodes = args.limit
-    elif args.limit:
-        max_nodes = args.limit
-
-    if args.json:
-        result = query_graph_json(
-            args.text,
-            graph_file=graph_file,
-            traversal=traversal,
-            max_nodes=max_nodes,
-            verbose=args.verbose,
-        )
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-    else:
-        result = query(
-            args.text,
-            graph_file=graph_file,
-            traversal=traversal,
-            max_nodes=max_nodes,
-            max_tokens=args.max_tokens,
-        )
-        if args.verbose:
-            print(f"[DEBUG] Query: {args.text}", file=sys.stderr)
-            print(f"[DEBUG] Traversal: {traversal}, max_nodes: {max_nodes}", file=sys.stderr)
-        print(result)
-
-
-def cmd_query_kb(args: argparse.Namespace) -> None:
-    """Query the knowledge base directly."""
-    from ewankb.query import query_kb
-
-    if getattr(args, 'dir', None):
-        kb_dir = Path(args.dir).resolve()
-        os.environ["EWANKB_DIR"] = str(kb_dir)
-        import ewankb.tools.config_loader as _cfg_mod
-        _cfg_mod._global_cfg = None
-        _cfg_mod._project_cfg = None
-        _cfg_mod._llm_cfg = None
-
-    result = query_kb(
-        args.text,
-        domain_filter=args.domain,
-        max_results=args.max_results,
-    )
-    print(result)
-
-
-def cmd_preflight(args: argparse.Namespace) -> None:
-    """Check environment readiness, output JSON. With --fix, auto-create missing items."""
-    target = Path(args.dir).resolve() if args.dir else Path.cwd().resolve()
-    result: dict = {
-        "ewankb_root": str(EWANKB_ROOT),
-        "kb_dir": str(target),
-        "installed": True,
-        "dirs": {},
-        "counts": {},
-        "api": {},
-        "graph": {},
-        "ready": True,
-        "blockers": [],
-    }
-
-    # ── Directory checks ──
-    dir_checks = {
-        "project_config": target / "project_config.json",
-        "llm_config": target / "llm_config.json",
-        "source": target / "source",
-        "source_repos": target / "source" / "repos",
-        "source_docs": target / "source" / "docs",
-        "domains": target / "domains",
-        "knowledgeBase": target / "knowledgeBase",
-        "graph": target / "graph",
-    }
-    for key, path in dir_checks.items():
-        result["dirs"][key] = path.exists()
-
-    # ── --fix: create missing directories and config ──
-    if args.fix:
-        for d in ["source/repos", "source/docs", "domains/_meta",
-                   "knowledgeBase/_meta", "knowledgeBase/_state", "graph/.cache"]:
-            (target / d).mkdir(parents=True, exist_ok=True)
-        # Re-check after fix
-        for key, path in dir_checks.items():
-            result["dirs"][key] = path.exists()
-
-        # Create project_config.json + llm_config.json if missing
-        cfg_path = target / "project_config.json"
-        llm_path = target / "llm_config.json"
-        if not cfg_path.exists() or not llm_path.exists():
-            from ewankb.tools.config_loader import create_project_config, get_global_config
-            gcfg = get_global_config()
-            create_project_config(target, f"{target.name}业务知识库")
-            result["dirs"]["project_config"] = True
-            result["dirs"]["llm_config"] = True
-            result["config_created"] = True
-            result["config_values"] = {
-                "base_url": gcfg.base_url or "(default: api.anthropic.com)",
-                "model": gcfg.default_model,
-            }
-
-    # ── File counts ──
-    repos_dir = target / "source" / "repos"
-    docs_dir = target / "source" / "docs"
-    java_files = list(repos_dir.rglob("*.java")) if repos_dir.exists() else []
-    doc_files = list(docs_dir.rglob("*.md")) if docs_dir.exists() else []
-    result["counts"]["java_files"] = len(java_files)
-    result["counts"]["doc_files"] = len(doc_files)
-
-    # ── API config ──
-    try:
-        os.environ["EWANKB_DIR"] = str(target)
-        import ewankb.tools.config_loader as _cfg_mod
-        _cfg_mod._global_cfg = None
-        _cfg_mod._project_cfg = None
-        _cfg_mod._llm_cfg = None
-
-        from ewankb.tools.config_loader import get_project_config, get_llm_config
-        llm = get_llm_config()
-        pcfg = get_project_config()
-        api_key = llm.get("api_key") or pcfg.get("api_key", "")
-        base_url = llm.get("base_url") or pcfg.get("base_url", "")
-        model = llm.get("model") or pcfg.get("model", "")
-        result["api"] = {
-            "key_configured": bool(api_key),
-            "key_preview": (api_key[:8] + "...") if api_key else "",
-            "base_url": base_url,
-            "model": model,
-        }
-    except Exception as e:
-        result["api"] = {"key_configured": False, "error": str(e)}
-
-    # ── Graph status ──
-    graph_file = target / "graph" / "graph.json"
-    if graph_file.exists():
-        try:
-            with open(graph_file, encoding="utf-8") as f:
-                gdata = json.load(f)
-            meta = gdata.get("metadata", {})
-            result["graph"] = {
-                "exists": True,
-                "nodes": meta.get("num_nodes", len(gdata.get("nodes", []))),
-                "links": meta.get("num_links", len(gdata.get("links", []))),
-                "engine": meta.get("engine", "?"),
-                "created_at": meta.get("created_at", "?"),
-            }
-        except Exception:
-            result["graph"] = {"exists": True, "error": "parse_failed"}
-    else:
-        result["graph"] = {"exists": False}
-
-    # ── Blockers ──
-    blockers = []
-    for required_dir in ("source", "domains", "knowledgeBase", "graph"):
-        if not result["dirs"].get(required_dir):
-            blockers.append(f"no_{required_dir}")
-    if not result["dirs"]["project_config"]:
-        blockers.append("no_project_config")
-    if not args.query:
-        if not result["dirs"]["llm_config"]:
-            blockers.append("no_llm_config")
-        if result["counts"]["java_files"] == 0:
-            blockers.append("no_java_files")
-        if not result["api"].get("key_configured"):
-            blockers.append("no_api_key")
-    result["blockers"] = blockers
-    result["ready"] = len(blockers) == 0
-
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-    if not result["ready"]:
-        sys.exit(1)
-
-
-def _resolve_kb_dir() -> Path:
-    """Resolve the knowledge base directory."""
-    # EWANKB_DIR env var takes precedence
-    env_dir = os.environ.get("EWANKB_DIR", "")
-    if env_dir:
-        return Path(env_dir).resolve()
-    # Otherwise use current directory
-    cwd = Path.cwd()
-    # Check if cwd has project_config.json
-    if (cwd / "project_config.json").exists():
-        return cwd
-    # Check if we're inside the ewan-kb tool repo (wrong location)
-    if (cwd / "pyproject.toml").exists() and (cwd / "tools").exists():
-        print("Error: Run this command from your knowledge base directory, "
-              "or set EWANKB_DIR.", file=sys.stderr)
-        sys.exit(1)
-    print("Error: project_config.json not found in current directory.", file=sys.stderr)
-    print("Run 'ewankb init <name>' first, or 'cd' to your knowledge base directory.", file=sys.stderr)
-    sys.exit(1)
-
-
-def _graph_file() -> Path:
-    """Get the graph.json path."""
-    kb_dir = _resolve_kb_dir()
-    gf = kb_dir / "graph" / "graph.json"
-    if not gf.exists():
-        print("Error: graph.json not found. Run 'ewankb build' first.", file=sys.stderr)
-        sys.exit(1)
-    return gf
-
-
-def cmd_stats() -> None:
-    """Show graph stats."""
-    from ewankb.tools.build_graph.__main__ import _print_stats
-
-    gf = _graph_file()
-    with open(gf, encoding="utf-8") as f:
-        graph = json.load(f)
-    _print_stats(graph)
-
-
-def cmd_communities() -> None:
-    """Show communities."""
-    from ewankb.tools.build_graph.graph_builder import detect_communities
-    from ewankb.tools.build_graph.__main__ import _print_communities
-
-    gf = _graph_file()
-    with open(gf, encoding="utf-8") as f:
-        graph = json.load(f)
-    communities = detect_communities(graph)
-    _print_communities(communities, graph)
-
-
-def cmd_surprising() -> None:
-    """Show surprising connections."""
-    from ewankb.tools.build_graph.graph_builder import detect_communities, find_surprising_connections
-    from ewankb.tools.build_graph.__main__ import _print_surprising
-
-    gf = _graph_file()
-    with open(gf, encoding="utf-8") as f:
-        graph = json.load(f)
-    communities = detect_communities(graph)
-    surprising = find_surprising_connections(graph, communities)
-    _print_surprising(surprising)
-
-
-def cmd_install() -> None:
-    """Install ewankb skills to Claude Code (~/.claude/skills/)."""
-    # Try pip-installed package location first, then source repo location
-    skills_src = EWANKB_ROOT / "ewankb" / "skills"
-    if not skills_src.exists():
-        skills_src = EWANKB_ROOT / ".claude" / "skills"
-    if not skills_src.exists():
-        print("Error: skill files not found.", file=sys.stderr)
-        print("Please reinstall ewankb or copy skill files manually.", file=sys.stderr)
-        sys.exit(1)
-
-    # Determine target directory
-    if os.name == "nt":
-        home = Path(os.environ.get("USERPROFILE", Path.home()))
-    else:
-        home = Path.home()
-    skills_dst = home / ".claude" / "skills"
-    skills_dst.mkdir(parents=True, exist_ok=True)
-
-    # Copy each skill subdirectory (with SKILL.md + references/ etc.)
-    copied = []
-    for skill_dir in sorted(skills_src.iterdir()):
-        if not skill_dir.is_dir() or not (skill_dir / "SKILL.md").exists():
-            continue
-        dst_dir = skills_dst / skill_dir.name
-        if dst_dir.exists():
-            shutil.rmtree(dst_dir)
-        shutil.copytree(skill_dir, dst_dir)
-        copied.append(skill_dir.name)
-
-    print(f"Installed {len(copied)} skill(s) to {skills_dst}/")
-    for d in copied:
-        print(f"  - {skills_dst / d}/SKILL.md")
-
-    # Update CLAUDE.md with ewankb trigger
-    claude_md = home / ".claude" / "CLAUDE.md"
-    ewankb_section = (
-        "# ewankb\n"
-        "- **ewankb** (`~/.claude/skills/ewankb/`) — build knowledge base from Java code + docs. Trigger: `/ewankb`\n"
-        "When the user types `/ewankb`, invoke the Skill tool with `skill: \"ewankb\"` before doing anything else.\n"
-    )
-
-    if claude_md.exists():
-        content = claude_md.read_text(encoding="utf-8")
-        if "# ewankb" not in content:
-            content = content.rstrip() + "\n\n" + ewankb_section
-            claude_md.write_text(content, encoding="utf-8")
-            print(f"\nAdded ewankb trigger to {claude_md}")
+def _dispatch(args):
+    cmd = args.command
+
+    if cmd == "init":
+        _run_init(args)
+    elif cmd == "discover":
+        _run_discover(args)
+    elif cmd == "knowledgebase":
+        _run_knowledgebase(args)
+    elif cmd == "analyze-code":
+        _run_analyze(args)
+    elif cmd == "build-graph":
+        _run_build_graph(args)
+    elif cmd == "build":
+        if args.kb:
+            _run_knowledgebase(args)
+        elif args.graph:
+            _run_build_graph(args)
         else:
-            print(f"\newankb trigger already in {claude_md}")
-    else:
-        claude_md.parent.mkdir(parents=True, exist_ok=True)
-        claude_md.write_text(ewankb_section, encoding="utf-8")
-        print(f"\nCreated {claude_md} with ewankb trigger")
-
-    print(f"\nDone. Use /ewankb in Claude Code to build a knowledge base.")
-
-
-def cmd_config(args: argparse.Namespace) -> None:
-    """Show or edit project config."""
-    kb_dir = _resolve_kb_dir()
-    config_file = kb_dir / "project_config.json"
-    llm_file = kb_dir / "llm_config.json"
-
-    if getattr(args, 'edit_llm', False):
-        editor = os.environ.get("EDITOR", "notepad" if os.name == "nt" else "vim")
-        os.system(f'"{editor}" "{llm_file}"')
-    elif args.edit:
-        editor = os.environ.get("EDITOR", "notepad" if os.name == "nt" else "vim")
-        os.system(f'"{editor}" "{config_file}"')
-    elif args.show:
-        with open(config_file, encoding="utf-8") as f:
-            print(f.read())
-    else:
-        with open(config_file, encoding="utf-8") as f:
-            data = json.load(f)
-        print(f"project_name: {data.get('project_name', '?')}")
-        print(f"system_name:  {data.get('system_name', '?')}")
-        # Show domains from domains.json (auto-discovered)
-        domains_file = kb_dir / "domains" / "_meta" / "domains.json"
-        if domains_file.exists():
-            with open(domains_file, encoding="utf-8") as f:
-                domains_data = json.load(f)
-            domain_list = domains_data.get("domain_list", [])
-            print(f"domains:      {len(domain_list)} (auto-discovered)")
-            for d in domain_list[:10]:
-                print(f"  - {d}")
-            if len(domain_list) > 10:
-                print(f"  ... and {len(domain_list) - 10} more")
-        else:
-            print("domains:      (not yet discovered — run ewankb extract)")
+            _run_knowledgebase(args)
+            _run_build_graph(args)
+    elif cmd in ("query", "query-graph"):
+        _run_query(args)
+    elif cmd == "query-kb":
+        _run_query_kb(args)
+    elif cmd in ("stats", "graph-stats"):
+        _run_stats(args)
+    elif cmd == "communities":
+        _run_communities(args)
+    elif cmd == "surprising":
+        _run_surprising(args)
+    elif cmd == "preflight":
+        _run_preflight(args)
+    elif cmd == "diff":
+        _run_diff(args)
+    elif cmd == "rebuild":
+        _run_rebuild(args)
+    elif cmd == "install":
+        _run_install(args)
+    elif cmd == "config":
+        _run_config(args)
 
 
 if __name__ == "__main__":
