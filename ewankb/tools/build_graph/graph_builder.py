@@ -26,6 +26,51 @@ from typing import Any
 from .. import config_loader as cfg
 
 
+# ── graphify RecursionError protection ────────────────────────────────────
+# graphify's AST extraction uses recursive tree-sitter walks (walk_calls,
+# walk) that can overflow the Python call stack on deeply nested Java files
+# (e.g. chains of anonymous inner classes). One bad file kills the entire
+# extraction batch. We patch the language extractors to catch RecursionError
+# per-file so a single pathological file is skipped instead.
+
+_GRAPHIFY_EXTRACTOR_NAMES = [
+    "extract_python", "extract_js", "extract_java", "extract_c",
+    "extract_cpp", "extract_ruby", "extract_csharp", "extract_kotlin",
+    "extract_scala", "extract_php", "extract_blade", "extract_dart",
+    "extract_verilog", "extract_lua", "extract_swift", "extract_julia",
+    "extract_go", "extract_rust", "extract_zig", "extract_powershell",
+    "extract_objc", "extract_elixir",
+]
+
+
+def _wrap_extractor(fn, name):
+    """Wrap an extractor to catch RecursionError per file."""
+    def safe_extractor(path):
+        try:
+            return fn(path)
+        except RecursionError:
+            print(f"  WARNING: RecursionError processing {path.name}, skipping file")
+            return {"nodes": [], "edges": [], "error": "RecursionError"}
+    safe_extractor.__name__ = name
+    return safe_extractor
+
+
+def _apply_graphify_patches():
+    """Apply runtime patches to graphify for robustness."""
+    import graphify.extract as _ge
+
+    # Raise Python recursion limit to handle deeply nested ASTs.
+    # Default is 1000; some Java files exceed 1000 levels of AST nesting
+    # (deeply chained method calls, anonymous inner classes, etc.).
+    sys.setrecursionlimit(20000)
+
+    for name in _GRAPHIFY_EXTRACTOR_NAMES:
+        original = getattr(_ge, name, None)
+        if original is not None and not getattr(original, "_ewankb_patched", False):
+            setattr(_ge, name, _wrap_extractor(original, name))
+            getattr(_ge, name)._ewankb_patched = True
+
+
 def build_graph(
     incremental: bool = True,
     source_dir: Path | None = None,
@@ -41,6 +86,8 @@ def build_graph(
 
     Returns the graph dict and writes graph.json to graph_dir.
     """
+    _apply_graphify_patches()
+
     from graphify.extract import extract, collect_files
     from graphify.build import build_from_json
     from graphify.cluster import cluster

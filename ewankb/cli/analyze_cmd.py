@@ -1,5 +1,6 @@
 """`ewankb analyze-code` — AST-based code analysis using graphify."""
 
+import sys
 from pathlib import Path
 from collections import Counter
 
@@ -7,6 +8,9 @@ from collections import Counter
 def run(args):
     path = Path(args.path).resolve()
     print(f"Analyzing code at {path}...")
+
+    from ewankb.tools.build_graph.graph_builder import _apply_graphify_patches
+    _apply_graphify_patches()
 
     from graphify import extract, collect_files
 
