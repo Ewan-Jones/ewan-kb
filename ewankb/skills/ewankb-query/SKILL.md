@@ -27,7 +27,22 @@ ewankb preflight --query --dir .
 
 **preflight 失败处理**（仅关注查询相关 blocker）：
 - 使用 `--query` 模式时，`no_llm_config` 和 `no_api_key` 不会出现在 blockers 中（查询不需要 LLM）
-- 如果 blockers 包含 `no_project_config` → 提示用户运行 `/ewankb init` 初始化知识库，停止
+- 如果 blockers 包含 `no_project_config` → **不要立即停止**，先检查全局知识库：
+  ```bash
+  PYTHONIOENCODING=utf-8 python ~/.claude/skills/ewankb-hub/scan.py --json
+  ```
+  - 如果返回了 KB 列表（至少一个）→ 当前目录没有项目级知识库，但机器上有全局知识库可用。提示用户：
+    ```
+    当前目录下没有项目级知识库，但检测到以下全局知识库：
+
+    | 库名 | 名称 | 概述 |
+    |------|------|------|
+    | ... | ... | ... |
+
+    请使用 /ewankb-hub <库名> <问题> 查询全局知识库。
+    ```
+    然后停止。
+  - 如果返回空 → 提示用户运行 `/ewankb init` 初始化知识库，停止
 - 如果 blockers 包含 `no_source` / `no_domains` / `no_knowledgeBase` / `no_graph` → 知识库不完整，提示用户运行 `/ewankb --build-graph`，停止
 - 如果 `graph.exists: false` 且需要 graph 查询 → 提示先运行 `/ewankb --build-graph`，停止
 
