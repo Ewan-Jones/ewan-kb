@@ -126,7 +126,6 @@ def main() -> None:
     pf_p = sub.add_parser("preflight", help="Check environment readiness (JSON output)")
     pf_p.add_argument("--fix", action="store_true", help="Auto-create missing dirs and config")
     pf_p.add_argument("--dir", type=str, help="Target knowledge base directory (default: .)")
-    pf_p.add_argument("--name", type=str, help="Knowledge base name (look up in ~/.ewankb/kb_registry.json)")
     pf_p.add_argument("--query", action="store_true", help="Skip LLM-related checks (no_llm_config, no_api_key)")
 
     sub.add_parser("diff", help="Detect source changes and show affected domains")
