@@ -5,11 +5,25 @@ import os
 import sys
 from pathlib import Path
 
-from ._helpers import EWANKB_ROOT
+from ._helpers import EWANKB_ROOT, find_global_kb
+
+
+def _resolve_target(args) -> Path:
+    if getattr(args, "dir", None):
+        return Path(args.dir).resolve()
+    name = getattr(args, "name", None)
+    if name:
+        kb_dir = find_global_kb(name)
+        if kb_dir is None:
+            print(f"Error: KB '{name}' not found in ~/.ewankb/", file=sys.stderr)
+            print("Register it in ~/.ewankb/kb_registry.json or use --dir to specify a path.", file=sys.stderr)
+            sys.exit(1)
+        return kb_dir.resolve()
+    return Path.cwd().resolve()
 
 
 def run(args):
-    target = Path(args.dir).resolve() if args.dir else Path.cwd().resolve()
+    target = _resolve_target(args)
     result = {
         "ewankb_root": str(EWANKB_ROOT),
         "kb_dir": str(target),
